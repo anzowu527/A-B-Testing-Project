@@ -1,5 +1,6 @@
-# A-B-Testing-Project
+# Conduct A/B Testing On Website sign-up pop out window
 We performed an A/B testing on website sign-up pop out window.
+
 Pre-experiment stage include: 
 - Test Design
 -  Data Collection using survey hoseted on Qualtrics
