@@ -1,0 +1,209 @@
+---
+title: "ABTesting Project"
+output:
+  html_document:
+    toc: false
+    toc_float: false
+    theme: spacelab
+---
+
+ 
+Data Cleaning
+```{r}
+# Removing uninformative Columns/Rows
+data <- read.csv("/Users/77wu/Desktop/data.csv")
+
+df <- data[, !(names(data) %in% c("IPAddress","Progress","Duration..in.seconds.","Finished","RecordedDate","StartDate","EndDate","Status","ResponseId","RecipientLastName","RecipientFirstName","RecipientEmail","ExternalReference","LocationLatitude","LocationLongitude","DistributionChannel","UserLanguage","Q1","Q_UnansweredPercentage","Q_UnansweredQuestions"))]
+df <- df[-(1:2), ]
+df$Q8Control[df$Q8Control == "Maybe"] <- "No"
+head(data)
+```
+```{r}
+library(dplyr)
+
+colnames(df)[1] <- "Gender"
+colnames(df)[2] <- "Frequency"
+colnames(df)[3] <- "AccOrGuest"
+colnames(df)[4] <- "SignupLikelihood"
+colnames(df)[5] <- "PrivacyConcern"
+colnames(df)[6] <- "PopupWindow"
+colnames(df)[7] <- "Control"
+colnames(df)[8] <- "Treatment"
+colnames(df)[9] <- "WhyNot"
+colnames(df)[10] <- "WhyNotText"
+colnames(df)[11] <- "AppropriateTiming"
+colnames(df)[12] <- "Credibility"
+colnames(df)[13] <- "FurtherExploration"
+colnames(df)[14] <- "WhichCondition"
+df$WhichCondition[df$WhichCondition == "immediately on the landing page."] <- "Immediately"
+df$WhichCondition[df$WhichCondition == "after some kind of user interactions (ex: clicked on a product, clicked on a tab.....)"] <- "Interactions"
+df <- df %>%
+  mutate(Group = if_else(Treatment %in% c("Yes", "No"), "Treatment", "Control"))
+
+df <- df %>%
+  mutate(
+    YESNO = case_when(
+      Control %in% c("Yes", "No") ~ Control,
+      Treatment %in% c("Yes", "No") ~ Treatment,
+      TRUE ~ NA_character_ # Use this line to handle rows where neither column has "Yes" or "No"
+    )
+  )
+df <- df[, !(names(df) %in% c("WhyNotText","Control","Treatment"))]
+head(df)
+```
+```{r}
+# User Background
+library(ggplot2)
+
+df_summary <- df %>%
+  group_by(SignupLikelihood, PrivacyConcern, Gender) %>%
+  summarize(Count = n(), .groups = 'drop')
+
+ggplot(df_summary, aes(x = SignupLikelihood, y = PrivacyConcern, color = Gender, size = Count)) +
+  geom_point(alpha = 0.7, show.legend = TRUE) +  # Remove the size legend if it's not needed
+  labs(title = "Signup Likelihood vs. Privacy Concern by Gender",
+       x = "Signup Likelihood",
+       y = "Privacy Concern") +
+  scale_color_brewer(palette = "Pastel1") +
+  scale_size(range = c(4, 11)) +  # Adjust the range of sizes here
+  theme_minimal()
+
+
+```
+Our analysis of the sample data indicates a lack of a clear trend between signup likelihood and privacy concern among users. Despite varying levels of signup likelihood, privacy concerns among users are diverse, suggesting that the decision to sign up is influenced by factors beyond privacy considerations alone. 
+
+Also, our sample reveals a higher proportion of female users, who demonstrate a greater tendency to sign up for an account on the retail website where they have made purchases. 
+```{r}
+#split control and treatment data
+control <- df[df$Group == "Control", ]
+treatment <- df[df$Group == "Treatment", ]
+control$WhyNot[control$YESNO == "Yes"] <- NA
+treatment$WhyNot[treatment$YESNO == "Yes"] <- NA
+
+```
+```{r}
+# Create tables of counts for the Control and Treatment columns
+control_counts <- table(control$YESNO)
+treat_counts <- table(treatment$YESNO)
+
+# Set up the plotting area to have 1 row and 2 columns
+par(mfrow = c(1, 2))
+
+# Plot the pie chart for Control
+pie(control_counts, 
+    labels = names(control_counts), 
+    main = "Sign up Pie Chart of Control")
+
+# Plot the pie chart for Treatment
+pie(treat_counts, 
+    labels = names(treat_counts), 
+    main = "Sign up Pie Chart of Treatment")
+
+par(mfrow = c(1, 1))
+
+```
+```{r}
+# t-test b/w different factors of control and treatment groups
+# AppropriateTiming => How well does the user satisfy with the given popup timing
+control_satisfaction <- as.numeric(control$AppropriateTiming)
+treatment_satisfaction <- as.numeric(treatment$AppropriateTiming)
+t_test_satisfaction <- t.test(control_satisfaction, treatment_satisfaction)
+t_test_satisfaction
+
+# Credibility => How the user think the given popup timing affect the website credibility
+control_credibility <- as.numeric(control$Credibility)
+treatment_credibility <- as.numeric(treatment$Credibility)
+t_test_credibility <- t.test(control_credibility, treatment_credibility)
+t_test_credibility
+
+#FurtherExploration => How willing the user would like to keep exploring the website after the given popup 
+control_FurtherExploration <- as.numeric(control$FurtherExploration)
+treatment_FurtherExploration <- as.numeric(treatment$FurtherExploration)
+t_test_FurtherExploration <- t.test(control_FurtherExploration, treatment_FurtherExploration)
+t_test_FurtherExploration
+```
+
+```{r}
+#Analyze WhyNot column
+
+whyNotValues <- control$WhyNot
+# Split the strings by comma
+splitValues <- strsplit(whyNotValues, split = ",", fixed = TRUE)
+# Flatten the list into a single vector
+flatValues <- unlist(splitValues)
+valueCounts <- table(flatValues)
+control_countsDf <- as.data.frame(valueCounts)
+names(control_countsDf) <- c("Reason", "Frequency")
+control_countsDf
+
+whyNotValues <- treatment$WhyNot
+# Split the strings by comma
+splitValues <- strsplit(whyNotValues, split = ",", fixed = TRUE)
+# Flatten the list into a single vector
+flatValues <- unlist(splitValues)
+valueCounts <- table(flatValues)
+treat_countsDf <- as.data.frame(valueCounts)
+names(treat_countsDf) <- c("Reason", "Frequency")
+treat_countsDf
+```
+```{r}
+treat_countsDf$Group <- 'Treatment'
+control_countsDf$Group <- 'Control'
+combinedDf <- rbind(treat_countsDf, control_countsDf)
+
+ggplot(combinedDf, aes(x = Reason, y = Frequency, fill = Group)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  labs(title = "Frequency of Reasons by Group",
+       x = "Reason",
+       y = "Frequency") +
+  scale_fill_manual(values = c("Treatment" = "lightblue", "Control" = "pink")) 
+
+```
+
+```{r}
+library(dplyr)
+df_summary <- df %>%
+  group_by(AccOrGuest, YESNO, Group) %>%
+  summarize(Count = n(), .groups = 'drop')
+
+ggplot(df_summary, aes(x = AccOrGuest, y = YESNO, color = Group, size = Count)) +
+  geom_point(alpha = 0.5, position = position_jitter(width = 0.1, height = 0)) +
+  geom_text(aes(label = Count), position = position_jitter(width = 0.1, height = 0), vjust = -0.5) +
+  scale_size_continuous(range = c(3, 10)) + # Adjust size range as needed
+  labs(title = "Dot Plot of Sign up Response by Account or Guest Status",
+       x = "Account or Guest",
+       y = "Whether or not to Sign up") +
+  scale_color_manual(values = c("Control" = "lightblue", "Treatment" = "pink")) +
+  theme_minimal() +
+  guides(size = FALSE) # Hide the size legend
+
+
+
+```
+```{r}
+filtered_values <- df %>%
+  filter(AccOrGuest == "Create an account", YESNO == "No", Group == "Treatment") %>%
+  select(WhichCondition)
+
+# Display the filtered values
+print(filtered_values)
+
+```
+
+
+```{r}
+filtered_values <- df %>%
+  filter(AccOrGuest == "Create an account", YESNO == "No", Group == "Treatment") %>%
+  select(WhyNot)
+
+print(filtered_values)
+```
+```{r}
+```
+```{r}
+```
+```{r}
+```
+```{r}
+```
